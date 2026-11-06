@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>짭새를 속여라! - 프롤로그: 추격전</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #0b0b0f;
+            color: #f0f0f5;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .game-container {
+            position: relative;
+            width: 800px;
+            height: 450px;
+            background: #151520;
+            border: 3px solid #2a2a3c;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #11111a, #1f1f2e);
+        }
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .timer-box {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #444;
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+        .status-box {
+            font-size: 14px;
+            color: #ff4757;
+            background: rgba(255, 71, 87, 0.1);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(11, 11, 15, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+        .overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255,255,255,0.2);
+        }
+        p {
+            font-size: 16px;
+            color: #a4b0be;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+        .controls-guide {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .key-badge {
+            background: #2f3542;
+            border: 1px solid #57606f;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            box-shadow: 0 4px 0 #1e272e;
+        }
+        .btn {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            box-shadow: 0 4px 0 #c23616;
+        }
+        .btn:hover {
+            background: #ff6b81;
+        }
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #c23616;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- 게임 화면 Canvas -->
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
+
+        <!-- 상단 UI 오버레이 -->
+        <div class="ui-layer" id="uiLayer" style="display: none;">
+            <div class="header">
+                <div class="timer-box">도주 시간: <span id="survivalTime">0.0</span>초</div>
+                <div class="status-box">🚨 경찰이 바짝 추격 중!</div>
+            </div>
+        </div>
+
+        <!-- 시작 화면 오버레이 -->
+        <div id="startScreen" class="overlay">
+            <h1>짭새를 속여라!</h1>
+            <p>경찰의 눈을 피해 전력 질주하세요!<br>장애물을 피해 오래 버틸수록 심문 모드의 체력이 유리해집니다.</p>
+            <div class="controls-guide">
+                <div class="key-badge">⬆️ 점프</div>
+                <div class="key-badge">⬇️ 슬라이딩</div>
+            </div>
+            <button class="btn" onclick="startGame()">게임 시작</button>
+        </div>
+
+        <!-- 게임 오버 / 체포 화면 오버레이 -->
+        <div id="gameOverScreen" class="overlay hidden">
+            <h1>체포되었습니다!</h1>
+            <p id="finalScoreText">버틴 시간: 0.0초<br>이 기록으로 심문 모드로 진입합니다.</p>
+            <button class="btn" onclick="restartGame()">다시 도주하기</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 게임 상태 변수
+        let gameState = 'START'; // START, PLAYING, GAMEOVER
+        let score = 0;
+        let gameSpeed = 5;
+        let gravity = 0.6;
+
+        // 플레이어 객체
+        let player = {
+            x: 100,
+            y: 330,
+            width: 30,
+            height: 50,
+            vy: 0,
+            isJumping: false,
+            isSliding: false,
+            slideTimer: 0
+        };
+
+        // 장애물 배열
+        let obstacles = [];
+        let obstacleTimer = 0;
+        let nextObstacleInterval = 120;
+
+        // 배경 빌딩 실루엣용 데이터
+        let buildings = [];
+        for (let i = 0; i < 10; i++) {
+            buildings.push({
+                x: i * 100,
+                y: 150 + Math.random() * 100,
+                width: 80,
+                height: 300,
+                speed: 1.5
+            });
+        }
+
+        // 키 입력 처리
+        const keys = {};
+        window.addEventListener('keydown', e => {
+            if (['ArrowUp', 'ArrowDown', ' ', 'Space'].includes(e.key)) {
+                e.preventDefault(); // 스크롤 방지
+            }
+            keys[e.key] = true;
+
+            if (gameState === 'PLAYING') {
+                if ((e.key === 'ArrowUp' || e.key === ' ') && !player.isJumping && !player.isSliding) {
+                    player.vy = -12;
+                    player.isJumping = true;
+                }
+                if (e.key === 'ArrowDown' && !player.isJumping) {
+                    player.isSliding = true;
+                    player.height = 25;
+                    player.y = 355;
+                    player.slideTimer = 40; // 슬라이딩 유지 프레임
+                }
+            }
+        });
+
+        window.addEventListener('keyup', e => {
+            keys[e.key] = false;
+        });
+
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('uiLayer').style.display = 'flex';
+            resetGame();
+            gameState = 'PLAYING';
+            requestAnimationFrame(update);
+        }
+
+        function restartGame() {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            resetGame();
+            gameState = 'PLAYING';
+            requestAnimationFrame(update);
+        }
+
+        function resetGame() {
+            score = 0;
+            gameSpeed = 6;
+            obstacles = [];
+            obstacleTimer = 0;
+            player.y = 330;
+            player.vy = 0;
+            player.isJumping = false;
+            player.isSliding = false;
+            player.height = 50;
+        }
+
+        // 장애물 생성 (0: 바닥 장애물(점프 필요), 1: 공중 장애물(슬라이딩 필요))
+        function spawnObstacle() {
+            const type = Math.random() < 0.5 ? 0 : 1;
+            let obs = {
+                x: canvas.width,
+                width: 30,
+                type: type
+            };
+
+            if (type === 0) {
+                obs.height = 45;
+                obs.y = 380 - obs.height;
+            } else {
+                obs.height = 30;
+                obs.y = 280; // 공중 장애물 높이
+            }
+            obstacles.push(obs);
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            // 점수(시간) 증가
+            score += 1 / 60;
+            document.getElementById('survivalTime').innerText = score.toFixed(1);
+
+            // 속도 점진적 증가 (난이도 상승)
+            gameSpeed += 0.001;
+
+            // 플레이어 물리 연산 (점프)
+            player.vy += gravity;
+            player.y += player.vy;
+
+            // 바닥 충돌 체크
+            if (player.y > 330) {
+                player.y = 330;
+                player.vy = 0;
+                player.isJumping = false;
+            }
+
+            // 슬라이딩 타이머 체크
+            if (player.isSliding) {
+                player.slideTimer--;
+                if (player.slideTimer <= 0) {
+                    player.isSliding = false;
+                    player.height = 50;
+                    player.y = 330;
+                }
+            }
+
+            // 장애물 타이머
+            obstacleTimer++;
+            if (obstacleTimer >= nextObstacleInterval) {
+                spawnObstacle();
+                obstacleTimer = 0;
+                nextObstacleInterval = Math.max(60, Math.floor(120 - gameSpeed * 3) + Math.floor(Math.random() * 40));
+            }
+
+            // 장애물 이동 및 충돌 체크
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].x -= gameSpeed;
+
+                // 화면 밖으로 나간 장애물 제거
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                    continue;
+                }
+
+                // 충돌 박스 판정 (AABB 충돌)
+                if (
+                    player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y
+                ) {
+                    // 충돌 발생 -> 게임 오버
+                    gameOver();
+                }
+            }
+
+            // 배경 빌딩 이동
+            buildings.forEach(b => {
+                b.x -= b.speed;
+                if (b.x + b.width < 0) {
+                    b.x = canvas.width;
+                    b.y = 150 + Math.random() * 100;
+                }
+            });
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. 배경 빌딩 실루엣 그리기
+            ctx.fillStyle = '#1c1c2d';
+            buildings.forEach(b => {
+                ctx.fillRect(b.x, b.y, b.width, b.height);
+            });
+
+            // 2. 도로 바닥 그리기
+            ctx.fillStyle = '#222233';
+            ctx.fillRect(0, 380, canvas.width, 70);
+            ctx.fillStyle = '#ff4757';
+            ctx.fillRect(0, 380, canvas.width, 4); // 도로 상단 경계선
+
+            // 도로 위 차선 대시
+            ctx.fillStyle = '#ffffff';
+            let dashOffset = (score * gameSpeed * 10) % 40;
+            for (let i = -1; i < canvas.width / 40 + 1; i++) {
+                ctx.fillRect(i * 40 - dashOffset, 415, 20, 4);
+            }
+
+            // 3. 장애물 그리기
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.type === 0 ? '#ffa502' : '#ff4757';
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+                // 장애물 디테일
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+            });
+
+            // 4. 플레이어(도주범) 그리기
+            ctx.fillStyle = '#00d2d3';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            // 플레이어 눈 포인트
+            ctx.fillStyle = '#ffffff';
+            if (!player.isSliding) {
+                ctx.fillRect(player.x + 18, player.y + 10, 6, 6);
+            } else {
+                ctx.fillRect(player.x + 18, player.y + 6, 6, 4);
+            }
+
+            // 5. 쫓아오는 경찰 실루엣 (화면 좌측 고정 연출)
+            ctx.fillStyle = '#3f3f5f';
+            ctx.fillRect(30, 330, 25, 50);
+            ctx.fillStyle = '#ff4757';
+            ctx.fillRect(45, 338, 4, 4); // 경광등 포인트
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            document.getElementById('uiLayer').style.display = 'none';
+            document.getElementById('finalScoreText').innerHTML = `버틴 시간: <strong>${score.toFixed(1)}초</strong><br>이 기록으로 심문 모드의 체력이 결정됩니다!`;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
